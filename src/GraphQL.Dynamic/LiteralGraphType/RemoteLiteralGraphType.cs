@@ -11,6 +11,8 @@ using GraphQL.Introspection;
 using GraphQL.Types;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace GraphQL.Dynamic.Types.LiteralGraphType
 {
@@ -94,7 +96,7 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                         var url = remote.Url;
                         var schema = FetchRemoteServerSchema(url, remoteSchemaFetcher);
 
-                        var assemblyName = new AssemblyName($"GraphQL.Dynamic.RemoteLiteralGraphTypes{Guid.NewGuid().ToString("N")}");
+                        var assemblyName = new AssemblyName($"GraphQL.Dynamic.RemoteLiteralGraphTypesT{Guid.NewGuid().ToString("N")}");
                         var assemblyBuilder = AppDomain.CurrentDomain.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.RunAndSave);
 
                         var moduleBuilder = assemblyBuilder.DefineDynamicModule(assemblyName.Name, $"{assemblyName.Name}.dll");
@@ -118,6 +120,82 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                                 ctorGenerator.Emit(OpCodes.Ldstr, typeName);
                                 ctorGenerator.Emit(OpCodes.Call, parentConstructor);
                                 ctorGenerator.Emit(OpCodes.Ret);
+
+
+
+
+
+
+                                // Create CompilationUnitSyntax
+                                var syntaxFactory = SyntaxFactory.CompilationUnit();
+
+                                // Add System using statement: (using System)
+                                syntaxFactory = syntaxFactory.AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System")));
+
+                                // Create a namespace: (namespace CodeGenerationSample)
+                                var @namespace = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName("CodeGenerationSample")).NormalizeWhitespace();
+
+                                //  Create a class: (class Order)
+                                var classDeclaration = SyntaxFactory.ClassDeclaration("GeneratedRemoteLiteralGraphType");
+
+                                // Add the public modifier: (public class Order)
+                                classDeclaration = classDeclaration.AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword));
+
+                                var name = SyntaxFactory.ParseName("RemoteLiteralGraphTypeMetadata");
+                                var arguments = SyntaxFactory.ParseAttributeArgumentList($"(\"{remote.Moniker}\", \"{remote.Url}\", \"{typeName}\")");
+                                var attribute = SyntaxFactory.Attribute(name, arguments);
+                                
+                                //var attributeList = new SeparatedSyntaxList<AttributeSyntax>();
+                                //attributeList = attributeList.Add(attribute);
+                                var attributeList = SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(attribute))
+                                    .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+                                classDeclaration = classDeclaration.AddAttributeLists(attributeList);
+                                
+                                // Inherit BaseEntity<T> and implement IHaveIdentity: (public class Order : BaseEntity<T>, IHaveIdentity)
+                                classDeclaration = classDeclaration.AddBaseListTypes(
+                                    SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("RemoteLiteralGraphType")));
+                                    //SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("IHaveIdentity")));
+
+                                // Create a string variable: (bool canceled;)
+                                var variableDeclaration = SyntaxFactory.VariableDeclaration(SyntaxFactory.ParseTypeName("bool"))
+                                    .AddVariables(SyntaxFactory.VariableDeclarator("canceled"));
+
+                                // Create a field declaration: (private bool canceled;)
+                                var fieldDeclaration = SyntaxFactory.FieldDeclaration(variableDeclaration)
+                                    .AddModifiers(SyntaxFactory.Token(SyntaxKind.PrivateKeyword));
+
+                                var ctorDeclaration = SyntaxFactory.ConstructorDeclaration("GeneratedRemoteLiteralGraphType")
+                                    .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                                    .WithInitializer(
+                                        SyntaxFactory.ConstructorInitializer(SyntaxKind.BaseConstructorInitializer)
+                                        // could be BaseConstructorInitializer or ThisConstructorInitializer
+                                        .AddArgumentListArguments(
+                                            SyntaxFactory.Argument(SyntaxFactory.IdentifierName($"\"{url}\"")),
+                                            SyntaxFactory.Argument(SyntaxFactory.IdentifierName($"\"{typeName}\""))
+                                        )
+                                    )
+                                    .WithBody(SyntaxFactory.Block());
+                                
+                                // Add the field, the property and method to the class.
+                                classDeclaration = classDeclaration.AddMembers(ctorDeclaration);
+                                // classDeclaration = classDeclaration.AddMembers(fieldDeclaration, propertyDeclaration, methodDeclaration);
+
+                                // Add the class to the namespace.
+                                @namespace = @namespace.AddMembers(classDeclaration);
+
+                                // Add the namespace to the compilation unit.
+                                syntaxFactory = syntaxFactory.AddMembers(@namespace);
+
+                                // Normalize and get code as string.
+                                var code = syntaxFactory
+                                    .NormalizeWhitespace()
+                                    .ToFullString();
+
+                                // Output new code to the console.
+                                Console.WriteLine(code);
+
+
+
 
                                 return typeBuilder.CreateType();
                             })
