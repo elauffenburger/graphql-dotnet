@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
-using System.Reflection.Emit;
 using System.Threading.Tasks;
 using GraphQL.Dynamic.Types.Introspection;
 using GraphQL.Introspection;
@@ -13,9 +12,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CSharp;
-using System.CodeDom.Compiler;
 using System.Diagnostics;
+using Microsoft.CodeAnalysis.Emit;
+using System.IO;
 
 namespace GraphQL.Dynamic.Types.LiteralGraphType
 {
@@ -98,7 +97,7 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                     {
                         var url = remote.Url;
                         var schema = FetchRemoteServerSchema(url, remoteSchemaFetcher);                      
-
+                        
                         var types = schema.Types
                             .Where(typeFilter)
                             .Select(schemaType =>
@@ -108,10 +107,8 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                                 // Create CompilationUnitSyntax
                                 var syntaxFactory = SyntaxFactory.CompilationUnit();
 
-                                // Add System using statement: (using System)
+                                // Add System using statement
                                 syntaxFactory = syntaxFactory.AddUsings(
-                                    SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System")),
-                                    SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("GraphQL")),
                                     SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("GraphQL.Dynamic.Types.LiteralGraphType"))
                                 );
 
@@ -147,25 +144,35 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                                 classDeclaration = classDeclaration.AddMembers(ctorDeclaration);
                                 
                                 syntaxFactory = syntaxFactory.AddMembers(classDeclaration);
-                               
-                                var compilerResults = new CSharpCodeProvider()
-                                    .CompileAssemblyFromSource(
-                                        new CompilerParameters
-                                        {
-                                            GenerateInMemory = false,
-                                            ReferencedAssemblies =
-                                            {
-                                                "System.dll",
-                                                "GraphQL.dll",
-                                                Assembly.GetExecutingAssembly().Location
-                                            }
-                                        },
-                                        syntaxFactory.NormalizeWhitespace().ToFullString()
+
+                                var referenceAssemblies = CollectReferences();
+                                referenceAssemblies.Add(MetadataReference.CreateFromFile(typeof(RemoteLiteralGraphType).Assembly.Location));
+                                referenceAssemblies.Add(MetadataReference.CreateFromFile(typeof(ObjectGraphType).Assembly.Location));
+                                referenceAssemblies.Add(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+
+                                var compilation = CSharpCompilation.Create($"GraphQL.Dynamic.RemoteLiteralGraphTypes.{typeName}-{Guid.NewGuid().ToString("N")}",
+                                    options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+                                    syntaxTrees: new[] { CSharpSyntaxTree.ParseText(syntaxFactory.NormalizeWhitespace().ToFullString()) },
+                                    references: referenceAssemblies
                                     );
 
-                                Debug.WriteLine(syntaxFactory.NormalizeWhitespace().ToFullString());
+                                EmitResult emitResult;
 
-                                return compilerResults.CompiledAssembly.GetType(typeName);
+                                using (var ms = new MemoryStream())
+                                {
+                                    emitResult = compilation.Emit(ms);
+                                    if (emitResult.Success)
+                                    {
+                                        var assembly = Assembly.Load(ms.GetBuffer());
+                                        return assembly.GetType(typeName);
+                                    } else
+                                    {
+                                        foreach (var error in emitResult.Diagnostics)
+                                            Debug.WriteLine(error.GetMessage());
+                                    }
+                                }
+
+                                return null;
                             })
                             .ToList();
 
@@ -183,6 +190,40 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
 
             // Flatten
             return jaggedTypes.SelectMany(t => t).ToList();
+        }
+
+        private static List<MetadataReference> CollectReferences()
+        {
+            // first, collect all assemblies
+            var assemblies = new HashSet<Assembly>();
+
+            Collect(Assembly.Load(new AssemblyName("netstandard")));
+
+            // second, build metadata references for these assemblies
+            var result = new List<MetadataReference>(assemblies.Count);
+            foreach (var assembly in assemblies)
+            {
+                result.Add(MetadataReference.CreateFromFile(assembly.Location));
+            }
+
+            return result;
+
+            // helper local function - add assembly and its referenced assemblies
+            void Collect(Assembly assembly)
+            {
+                if (!assemblies.Add(assembly))
+                {
+                    return;
+                }
+
+                var referencedAssemblyNames = assembly.GetReferencedAssemblies();
+
+                foreach (var assemblyName in referencedAssemblyNames)
+                {
+                    var loadedAssembly = Assembly.Load(assemblyName);
+                    assemblies.Add(loadedAssembly);
+                }
+            }
         }
 
 
