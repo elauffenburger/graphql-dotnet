@@ -4,6 +4,7 @@ using GraphQL.StarWars;
 using GraphQL.StarWars.Types;
 using GraphQL.Types;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -40,6 +41,13 @@ namespace GraphQL.Harness
             services.AddSingleton<ISchema, StarWarsSchema>();
 
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
+            services.AddCors(o => o.AddPolicy("OpenCors", builder =>
+            {
+                builder.AllowAnyOrigin()
+                       .AllowAnyMethod()
+                       .AllowAnyHeader();
+            }));
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -47,6 +55,8 @@ namespace GraphQL.Harness
         {
             loggerFactory.AddConsole();
             app.UseDeveloperExceptionPage();
+
+            app.UseCors("OpenCors");
 
             app.UseMiddleware<GraphQLMiddleware>(new GraphQLSettings
             {
