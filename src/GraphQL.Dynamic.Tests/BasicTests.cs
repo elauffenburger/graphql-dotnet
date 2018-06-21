@@ -10,7 +10,6 @@ using Xunit;
 
 namespace GraphQL.Dynamic.Tests
 {
-    [Trait("Category", "Dynamic - Basic")]
     public class BasicTests
     {
         private readonly Schema _schema;

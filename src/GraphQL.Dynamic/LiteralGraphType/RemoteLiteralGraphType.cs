@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Threading.Tasks;
 using GraphQL.Dynamic.Types.Introspection;
@@ -57,12 +58,12 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                     throw new Exception($"Failed to find type '{_name}' in remote '{_remoteLocation}' schema");
                 }
 
-                Name = $"{_remoteLocation}.{_name}";
+                Name = LiteralGraphTypeHelpers.GenerateRemoteTypeName(_remoteLocation, _name);
 
                 if (!_hasAddedFields)
                 {
-                    var fields = GetFieldsForFieldType(_remoteLocation, type).Where(f => f != null).ToList();
-                    foreach (var field in fields)
+                    var fields = GetFieldsForFieldType(_remoteLocation, type)?.Where(f => f != null).ToArray();
+                    foreach (var field in fields ?? new FieldType[] { })
                     {
                         AddField(field);
                     }
@@ -229,35 +230,20 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
 
         private static IEnumerable<FieldType> GetFieldsForFieldType(string remote, Introspection.TypeElement parentField)
         {
-            FieldTypeResolver complexFieldTypeResolver = member =>
+            var inputFields = parentField.InputFields
+                ?.Select(f => new Field
+                {
+                    Name = f.Name,
+                    Description = f.Description,
+                    Type = f.Type,
+                    Args = new FieldArg[] { }
+                })
+                .ToArray();
+
+            var fields = (parentField.Fields ?? new Field[] { }).Concat(inputFields ?? new Field[] { });
+            if (fields.Count() == 0)
             {
-                if (!(member is RemoteLiteralGraphTypeMemberInfo literalMember))
-                {
-                    return null;
-                }
-
-                if (!RemoteServerTypes.TryGetValue(remote, out var remoteTypes))
-                {
-                    return null;
-                }
-
-                var schemaType = remoteTypes.FirstOrDefault(t => t.Name == literalMember.TypeName);
-                var realType = literalMember.IsList
-                    ? typeof(ListGraphType<>).MakeGenericType(schemaType)
-                    : schemaType;
-
-                return new FieldType
-                {
-                    Name = literalMember.Name,
-                    Type = realType,
-                    Resolver = LiteralGraphTypeHelpers.CreateFieldResolverFor(literalMember)
-                };
-            };
-
-            var fields = parentField.Fields;
-            if (fields == null)
-            {
-                return new FieldType[] { };
+                return null;
             }
 
             return fields
@@ -278,8 +264,38 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                 })
                 // TODO: handle unresolvable types (I'm looking at you UNION)
                 .Where(member => member.Type != LiteralGraphTypeMemberInfoType.Unknown)
-                .Select(member => LiteralGraphTypeHelpers.GetFieldTypeForMember(member, complexFieldTypeResolver))
+                .Select(member => LiteralGraphTypeHelpers.GetFieldTypeForMember(member, ComplexFieldTypeResolver))
                 .ToList();
+
+            FieldType ComplexFieldTypeResolver(LiteralGraphTypeMemberInfo member)
+            {
+                if (!(member is RemoteLiteralGraphTypeMemberInfo literalMember))
+                {
+                    return null;
+                }
+
+                if (!RemoteServerTypes.TryGetValue(remote, out var remoteTypes))
+                {
+                    return null;
+                }
+
+                // Check if the member is a scalar type. If so, get the appropriate built-in GraphType; 
+                // otherwise, try to find the type in the list of remote types
+                var typeName = literalMember.TypeName;
+                var schemaType = LiteralGraphTypeHelpers.GetPrimitiveGraphType(typeName)
+                    ?? remoteTypes.FirstOrDefault(t => t.Name == typeName);
+
+                var realType = literalMember.IsList
+                    ? typeof(ListGraphType<>).MakeGenericType(schemaType)
+                    : schemaType;
+
+                return new FieldType
+                {
+                    Name = literalMember.Name,
+                    Type = realType,
+                    Resolver = LiteralGraphTypeHelpers.CreateFieldResolverFor(literalMember)
+                };
+            }
         }
 
         private static LiteralGraphTypeMemberInfoType IntrospectionTypeToLiteralGraphTypeMemberInfoType(TypeElementType type)
@@ -404,12 +420,16 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
         {
             using (var client = new HttpClient())
             {
+                client.DefaultRequestHeaders
+                    .Accept
+                    .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
                 var query = new
                 {
                     Query = SchemaIntrospection.IntrospectionQuery
                 };
 
-                var response = client.PostAsync(new Uri(url), new StringContent(JsonConvert.SerializeObject(query)))
+                var response = client.PostAsync(new Uri(url), new StringContent(JsonConvert.SerializeObject(query), Encoding.UTF8, "application/json"))
                     .ConfigureAwait(false)
                     .GetAwaiter()
                     .GetResult();
@@ -420,7 +440,7 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                     .GetAwaiter()
                     .GetResult();
 
-                return Introspection.Root.FromJson(json)?.Data?.Schema;
+                return Root.FromJson(json)?.Data?.Schema;
             }
         }
 
