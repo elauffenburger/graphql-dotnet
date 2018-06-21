@@ -101,12 +101,9 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                         var schema = FetchRemoteServerSchema(url, remoteSchemaFetcher);
 
                         var referenceAssemblies = CollectReferences();
-                        referenceAssemblies.Add(MetadataReference.CreateFromFile(typeof(RemoteLiteralGraphType).Assembly.Location));
-                        referenceAssemblies.Add(MetadataReference.CreateFromFile(typeof(ObjectGraphType).Assembly.Location));
-                        referenceAssemblies.Add(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
-
                         var assemblyName = $"GraphQL.Dynamic.RemoteLiteralGraphTypes.{remote.Moniker}";
 
+                        // check if remotetype is already in appdomain
                         foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
                         {
                             if (a.FullName.StartsWith(assemblyName))
@@ -122,22 +119,22 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                             }
                         }
 
-                        var types = schema.Types.Where(typeFilter).ToList();
                         var syntaxFactory = SyntaxFactory.CompilationUnit();
 
-                        // Add System using statement
+                        // Add using statement
                         syntaxFactory = syntaxFactory.AddUsings(
                             SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("GraphQL.Dynamic.Types.LiteralGraphType"))
                         );
 
+                        var types = schema.Types.Where(typeFilter).ToList();
                         types.ForEach(schemaType =>
                         {
-                            // var test = schemaType.InputFields; // DEBUG Field Information
                             var typeName = schemaType.Name;
 
                             Type foundType = null;
                             foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
                             {
+                                // don't generate type if it was already generated and loaded into the appdomain
                                 foundType = a.GetType(typeName);
                                 if (foundType != null)
                                 {
@@ -151,17 +148,22 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                             // Add the public modifier
                             classDeclaration = classDeclaration.AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword));
 
+                            // generate annotation
                             var name = SyntaxFactory.ParseName("RemoteLiteralGraphTypeMetadata");
                             var arguments = SyntaxFactory.ParseAttributeArgumentList($"(\"{remote.Moniker}\", \"{remote.Url}\", \"{typeName}\")");
                             var attribute = SyntaxFactory.Attribute(name, arguments);
 
                             var attributeList = SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(attribute))
                                 .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+
+                            // add annotaton to class
                             classDeclaration = classDeclaration.AddAttributeLists(attributeList);
 
+                            // add inhertiance
                             classDeclaration = classDeclaration.AddBaseListTypes(
                                 SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("RemoteLiteralGraphType")));
 
+                            // add constructor
                             var ctorDeclaration = SyntaxFactory.ConstructorDeclaration(typeName)
                                 .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
                                 .WithInitializer(
@@ -173,41 +175,43 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                                 )
                                 .WithBody(SyntaxFactory.Block());
 
-                            // Add the field, the property and method to the class.
+                            // add the constructor to the class
                             classDeclaration = classDeclaration.AddMembers(ctorDeclaration);
 
+                            // add the class to the full code
                             syntaxFactory = syntaxFactory.AddMembers(classDeclaration);
                         });
 
+                        // compile code with assembly references
                         var compilation = CSharpCompilation.Create(assemblyName,
                             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-                            syntaxTrees: new[] { CSharpSyntaxTree.ParseText(syntaxFactory.NormalizeWhitespace().ToFullString()) },
+                            syntaxTrees: new[] {
+                                CSharpSyntaxTree.ParseText(syntaxFactory.NormalizeWhitespace().ToFullString())
+                            },
                             references: referenceAssemblies
                             );
 
-                        EmitResult emitResult;
-                        using (var ms = new MemoryStream())
+                        var ms = new MemoryStream();                        
+                        var emitResult = compilation.Emit(ms);
+                        if (emitResult.Success)
                         {
-                            emitResult = compilation.Emit(ms);
-                            if (emitResult.Success)
-                            {
-                                var assembly = Assembly.Load(ms.GetBuffer());
+                            var assembly = Assembly.Load(ms.GetBuffer());
 
-                                DependencyContext.Load(assembly);
+                            DependencyContext.Load(assembly);
 
-                                foreach (var t in types)
-                                {
-                                    newTypes.Add(assembly.GetType(t.Name));
-                                }
-                            }
-                            else
+                            foreach (var t in types)
                             {
-                                foreach (var error in emitResult.Diagnostics)
-                                {
-                                    throw new Exception($"Failed to dynamically compile the remote types. {error.GetMessage()}");
-                                }
+                                newTypes.Add(assembly.GetType(t.Name));
                             }
                         }
+                        else
+                        {
+                            foreach (var error in emitResult.Diagnostics)
+                            {
+                                throw new Exception($"Failed to dynamically compile the remote types. {error.GetMessage()}");
+                            }
+                        }
+                        
 
                         // Update cache
                         typeSet = new HashSet<Type>(newTypes);
@@ -227,36 +231,38 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
 
         private static List<MetadataReference> CollectReferences()
         {
-            // first, collect all assemblies
-            var assemblies = new HashSet<Assembly>();
+            var assemblies = Collect(Assembly.Load(new AssemblyName("netstandard")));
 
-            Collect(Assembly.Load(new AssemblyName("netstandard")));
-
-            // second, build metadata references for these assemblies
             var result = new List<MetadataReference>(assemblies.Count);
             foreach (var assembly in assemblies)
             {
                 result.Add(MetadataReference.CreateFromFile(assembly.Location));
             }
 
+            result.Add(MetadataReference.CreateFromFile(typeof(RemoteLiteralGraphType).Assembly.Location));
+            result.Add(MetadataReference.CreateFromFile(typeof(ObjectGraphType).Assembly.Location));
+            result.Add(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+
             return result;
+        }
 
-            // helper local function - add assembly and its referenced assemblies
-            void Collect(Assembly assembly)
+        private static HashSet<Assembly> Collect(Assembly assembly)
+        {
+            var assemblies = new HashSet<Assembly>();
+            if (!assemblies.Add(assembly))
             {
-                if (!assemblies.Add(assembly))
-                {
-                    return;
-                }
-
-                var referencedAssemblyNames = assembly.GetReferencedAssemblies();
-
-                foreach (var assemblyName in referencedAssemblyNames)
-                {
-                    var loadedAssembly = Assembly.Load(assemblyName);
-                    assemblies.Add(loadedAssembly);
-                }
+                return assemblies;
             }
+
+            var referencedAssemblyNames = assembly.GetReferencedAssemblies();
+
+            foreach (var assemblyName in referencedAssemblyNames)
+            {
+                var loadedAssembly = Assembly.Load(assemblyName);
+                assemblies.Add(loadedAssembly);
+            }
+
+            return assemblies;
         }
 
         private static IEnumerable<FieldType> GetFieldsForFieldType(string remote, Introspection.TypeElement parentField)
