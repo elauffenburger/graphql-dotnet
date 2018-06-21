@@ -12,15 +12,10 @@ using GraphQL.Introspection;
 using GraphQL.Types;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Emit;
 using Microsoft.Extensions.DependencyModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using System.Diagnostics;
-using Microsoft.CodeAnalysis.Emit;
-using System.IO;
 using System.Text;
 
 namespace GraphQL.Dynamic.Types.LiteralGraphType
