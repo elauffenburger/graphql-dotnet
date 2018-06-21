@@ -16,6 +16,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.Emit;
 using System.IO;
+using System.Text;
 
 namespace GraphQL.Dynamic.Types.LiteralGraphType
 {

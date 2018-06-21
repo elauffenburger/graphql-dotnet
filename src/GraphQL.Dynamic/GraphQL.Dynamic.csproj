@@ -3,7 +3,7 @@
     <Description>Dynamic Types For GraphQL.NET</Description>
     <VersionPrefix>2.0.0</VersionPrefix>
     <Authors>Joe McBride</Authors>
-    <TargetFrameworks>netstandard20</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <AssemblyName>GraphQL.Dynamic</AssemblyName>
     <PackageId>GraphQL.Dynamic</PackageId>
     <PackageTags>GraphQL;json;api</PackageTags>
