@@ -230,14 +230,16 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
 
         private static List<MetadataReference> CollectReferences()
         {
+            // find all needed assemblies for .net standard
             var assemblies = Collect(Assembly.Load(new AssemblyName("netstandard")));
 
-            var result = new List<MetadataReference>(assemblies.Count);
+            var result = new List<MetadataReference>();
             foreach (var assembly in assemblies)
             {
                 result.Add(MetadataReference.CreateFromFile(assembly.Location));
             }
 
+            // add additional assemblies needed for the generated types
             result.Add(MetadataReference.CreateFromFile(typeof(RemoteLiteralGraphType).Assembly.Location));
             result.Add(MetadataReference.CreateFromFile(typeof(ObjectGraphType).Assembly.Location));
             result.Add(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
