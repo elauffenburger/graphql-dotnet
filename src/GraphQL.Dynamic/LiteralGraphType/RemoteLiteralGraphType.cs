@@ -296,7 +296,22 @@ namespace GraphQL.Dynamic.Types.LiteralGraphType
                         IsList = field.Type.Kind == TypeElementTypeKind.List,
                         GetValueFn = ctx =>
                         {
-                            return ((JToken)ctx.Source)[field.Name].Value<object>();
+                            var token = ((JToken)ctx.Source)[field.Name];
+
+                            // ...If the token is an array, hand back an IEnumerable<JToken>
+                            if (token is JArray array)
+                            {
+                                return array.Select(t => t).ToList();
+                            }
+
+                            // ...If the token is a simple value, hand that back
+                            if (token is JValue value)
+                            {
+                                return value.Value;
+                            }
+
+                            // ...Otherwise, give the token back as a JObject
+                            return token.Value<object>();
                         }
                     };
                 })
