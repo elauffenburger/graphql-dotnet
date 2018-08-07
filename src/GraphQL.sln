@@ -23,9 +23,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{BC80C071
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphQL.Harness.Tests", "GraphQL.Harness.Tests\GraphQL.Harness.Tests.csproj", "{CB5C204A-FBE9-40CC-B4C7-A29E7E162DBE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphQL.Dynamic", "GraphQL.Dynamic\GraphQL.Dynamic.csproj", "{D9AE874B-0D4D-4D09-A55C-F3FCF1DD7397}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GraphQL.Dynamic", "GraphQL.Dynamic\GraphQL.Dynamic.csproj", "{D9AE874B-0D4D-4D09-A55C-F3FCF1DD7397}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphQL.Dynamic.Tests", "GraphQL.Dynamic.Tests\GraphQL.Dynamic.Tests.csproj", "{199CAAC9-5B63-487B-BEEA-0810BF0D2F32}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GraphQL.Dynamic.Tests", "GraphQL.Dynamic.Tests\GraphQL.Dynamic.Tests.csproj", "{199CAAC9-5B63-487B-BEEA-0810BF0D2F32}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
